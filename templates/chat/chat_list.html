@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block content %}
+    <div class="chat-container" id="chat-container">
+        {% for chat in object_list %}
+            <div class="chat" style="width: 80%; background: rgb(255, 255, 255); box-shadow: 2px 0px 20px 0px #111;" data-id="{{ chat.id }}">
+                {% if chat.user.is_superuser %}
+                    <small class="chat-user-special">{{ chat.user }} - Admin</small>
+                {% else %}
+                    <small class="chat-user">{{ chat.user }}</small>
+                {% endif %}
+                <p><b class="chat-content">{{ chat|linebreaks }}</b></p>
+                <small class="chat-date">{{ chat.posted_at }}</small>
+            </div>
+        {% empty %}
+            <h1 class="heading">No Chats Yet. Be the first to message!</h1><br>
+        {% endfor %}
+    </div>
+
+    <!-- 聊天輸入框 -->
+    <div class="chat-input-container">
+        <form id="chat-form" method="POST" action="{% url 'chat:new' %}">
+            {% csrf_token %}
+            <textarea id="chat-input" name="message" class="form-control" rows="3" placeholder="Type your message..."></textarea>
+            <br>
+            <button type="submit" class="btn btn-lg btn-outline-primary">Send</button>
+        </form>
+    </div>
+
+    <script>
+        var lastMessageId = {% if object_list|length > 0 %}{{ object_list.last.id }}{% else %}0{% endif %};  // 儲存最後一條訊息的 ID
+        var chatContainer = document.querySelector('.chat-container');
+
+        // 滾動到底部
+        function scrollToBottom() {
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        // 定期檢查新消息
+        setInterval(function() {
+            fetch('/chat/update/?last_id=' + lastMessageId)  // 向伺服器發送請求，包含最後一條訊息的 ID
+                .then(response => response.json())
+                .then(data => {
+                    console.log(data);  
+
+                    // 如果有新訊息，則更新聊天容器
+                    if (data.chats.length > 0) {
+                        data.chats.forEach(chat => {
+                            var newChatMessage = document.createElement('div');
+                            newChatMessage.classList.add('chat');
+                            newChatMessage.style = "width: 80%; background: rgb(255, 255, 255); box-shadow: 2px 0px 20px 0px #111; margin-bottom: 10px;";  // 保持樣式一致
+
+                            // 判斷是否是admin
+                            var userClass = chat.is_superuser ? 'chat-user-special' : 'chat-user';
+                            newChatMessage.innerHTML = `
+                                <small class="${userClass}">${chat.user}</small>
+                                <p><b class="chat-content">${chat.message}</b></p>
+                                <small class="chat-date">${chat.posted_at}</small>
+                            `;
+                            chatContainer.appendChild(newChatMessage);  // 添加新訊息
+                        });
+
+                        // 更新lastMessageId
+                        lastMessageId = data.chats[data.chats.length - 1].id;
+
+                        // 滾動到底部
+                        setTimeout(function() {
+                            scrollToBottom();
+                        }, 100);  // 延遲100毫秒，確保新訊息渲染完
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching new chats:', error);
+                });
+        }, 2000);  // 每 2 秒發送一次請求
+
+        // 當用戶提交新訊息時發送消息
+        document.getElementById('chat-form').onsubmit = function(e) {
+            e.preventDefault();  // 防止頁面重新加載
+
+            var form = document.getElementById('chat-form');
+            var formData = new FormData(form);  // 收集表單數據
+
+            // 使用 Fetch 發送 AJAX 請求
+            fetch(form.action, {
+                method: 'POST',
+                body: formData  // 提交表單數據
+            })
+            .then(response => response.json())  
+            .then(data => {
+                if (data.success) {  // 如果發送成功
+                    form.reset();  // 清空輸入框
+
+                    // 在頁面上添加新訊息
+                    var newChatMessage = document.createElement('div');
+                    newChatMessage.classList.add('chat');
+                    newChatMessage.style = "width: 80%; background: rgb(255, 255, 255); box-shadow: 2px 0px 20px 0px #111; margin-bottom: 10px;"; // 確保間隔一致
+
+                    // 根據返回的數據更新訊息
+                    var userClass = data.is_superuser ? 'chat-user-special' : 'chat-user';
+                    newChatMessage.innerHTML = `
+                        <small class="${userClass}">${data.user}</small>
+                        <p><b class="chat-content">${data.message}</b></p>
+                        <small class="chat-date">${data.posted_at}</small>
+                    `;
+                    chatContainer.appendChild(newChatMessage);  // 添加新訊息
+
+                    // 滾動到底部
+                    setTimeout(function() {
+                        scrollToBottom();
+                    }, 100);  // 延遲100毫秒，確保新訊息渲染完
+                } else {
+                    alert('Message failed to send!');
+                }
+            })
+            .catch(error => {
+                console.error('Error posting message:', error);
+            });
+        };
+
+        // 頁面加載時，直接滾動到底部
+        window.onload = function() {
+            setTimeout(function() {
+                scrollToBottom();  // 滾動到底部
+            }, 100);  // 延遲100毫秒，確保頁面已完全渲染
+        };
+    </script>
+{% endblock content %}
